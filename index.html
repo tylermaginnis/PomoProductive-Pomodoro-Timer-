@@ -1,0 +1,1482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PomoProductive - WebGL Pomodoro Timer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r132/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/shaders/FXAAShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/postprocessing/Pass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/loaders/GLTFLoader.js"></script>
+    <style>
+        :root {
+            --primary-color: #4CAF50;
+            --secondary-color: #2196F3;
+            --background-color: #1a1a1a;
+            --text-color: #ffffff;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: var(--background-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        #ui-container {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 2;
+            text-align: center;
+            color: var(--text-color);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 2rem;
+            border-radius: 1rem;
+            backdrop-filter: blur(10px);
+            max-width: 600px;
+            width: 90%;
+        }
+
+        #timer {
+            font-size: 4rem;
+            font-weight: bold;
+            margin: 1rem 0;
+        }
+
+        .duration-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .duration-btn {
+            font-size: 1.5rem;
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin: 1rem 0;
+        }
+
+        button {
+            padding: 0.8rem 1.5rem;
+            border: none;
+            border-radius: 0.5rem;
+            background: var(--primary-color);
+            color: white;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        button:hover {
+            transform: scale(1.05);
+            background: var(--secondary-color);
+        }
+
+        #theme-selector {
+            margin-top: 1rem;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            background: white;
+            color: black;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        #quote {
+            font-style: italic;
+            margin: 1rem 0;
+            padding: 0.5rem;
+            border-left: 3px solid var(--primary-color);
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 0.5rem;
+        }
+
+        .particle {
+            position: absolute;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="ui-container">
+        <h1>PomoProductive</h1>
+        <div id="quote"></div>
+        <div id="timer">25:00</div>
+        <div class="duration-controls">
+            <button class="duration-btn" id="decrease-time">-</button>
+            <span id="duration-display">25 min</span>
+            <button class="duration-btn" id="increase-time">+</button>
+        </div>
+        <div class="controls">
+            <button id="start">Start</button>
+            <button id="pause">Pause</button>
+            <button id="reset">Reset</button>
+        </div>
+        <select id="theme-selector">
+            <option value="default">Default Theme</option>
+            <option value="ocean">Ocean Theme</option>
+            <option value="forest">Forest Theme</option>
+            <option value="cosmic">Cosmic Theme</option>
+        </select>
+    </div>
+
+    <script>
+        // Three.js setup
+        try {
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1;
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+            
+            // Add orbit controls for subtle movement
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.enableZoom = false;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 0.5;
+
+        // Timer state
+        let defaultDuration = 25 * 60; // 25 minutes in seconds
+        let timeLeft = defaultDuration;
+        let isRunning = false;
+        let timerInterval;
+            
+            // Timer progress for visual effects
+            let timerProgress = 1.0;
+
+        // Theme colors
+        const themes = {
+                default: { primary: '#4CAF50', secondary: '#2196F3', background: '#1a1a1a', ambient: '#334433', dragonColor: '#E94A0A' },
+                ocean: { primary: '#00BCD4', secondary: '#03A9F4', background: '#0D47A1', ambient: '#102030', dragonColor: '#FFC107' },
+                forest: { primary: '#2E7D32', secondary: '#81C784', background: '#1B5E20', ambient: '#0a280a', dragonColor: '#FF5722' },
+                cosmic: { primary: '#9C27B0', secondary: '#E91E63', background: '#311B92', ambient: '#180830', dragonColor: '#FFEB3B' }
+            };
+            
+            let currentTheme = themes.default;
+
+        // Inspirational quotes
+        const quotes = [
+            "The only way to do great work is to love what you do. - Steve Jobs",
+            "Time is what we want most, but what we use worst. - William Penn",
+            "Focus on being productive instead of busy. - Tim Ferriss",
+            "The best time to plant a tree was 20 years ago. The second best time is now. - Chinese Proverb",
+            "Don't count the days, make the days count. - Muhammad Ali",
+            "Success is not final, failure is not fatal: it is the courage to continue that counts. - Winston Churchill",
+            "The future belongs to those who prepare for it today. - Malcolm X",
+            "Time is a created thing. To say 'I don't have time,' is like saying, 'I don't want to.' - Lao Tzu",
+            "Productivity is never an accident. It is always the result of a commitment to excellence. - Paul J. Meyer",
+            "The only limit to our realization of tomorrow will be our doubts of today. - Franklin D. Roosevelt"
+        ];
+
+            // Custom shader code
+            // Timer ring fragment shader for a flowing energy effect
+            const timerRingFragmentShader = `
+                uniform vec3 color;
+                uniform vec3 emissiveColor;
+                uniform float time;
+                uniform float progress;
+                
+                varying vec2 vUv;
+                varying vec3 vNormal;
+                varying vec3 vPosition;
+                
+                void main() {
+                    // Base color and lighting
+                    vec3 normal = normalize(vNormal);
+                    vec3 viewDir = normalize(-vPosition);
+                    float fresnel = pow(1.0 - max(0.0, dot(normal, viewDir)), 3.0);
+                    
+                    // Energy flow effect
+                    float angle = atan(vPosition.y, vPosition.x);
+                    float normalized = (angle / (2.0 * 3.14159)) + 0.5;
+                    
+                    // Flow indicator based on timer progress
+                    float flowPosition = mod(normalized - time * 0.1, 1.0);
+                    float isFlow = smoothstep(0.98, 1.0, 1.0 - abs(flowPosition - progress * 0.95));
+                    
+                    // Energy flow based on position on the ring
+                    float energyPulse = sin(vUv.x * 20.0 + time * 3.0) * 0.5 + 0.5;
+                    float energyGlow = sin(time * 2.0) * 0.5 + 0.5;
+                    
+                    // Pulse effect stronger when timer is running
+                    float pulseIntensity = isFlow * (1.0 + energyPulse * 0.5);
+                    
+                    // Combine effects
+                    vec3 finalColor = mix(color, emissiveColor, fresnel * 0.6 + pulseIntensity * 0.4 + energyGlow * 0.2);
+                    
+                    // Add flowing energy highlight
+                    finalColor += isFlow * emissiveColor * 1.5;
+                    
+                    // Add a pulsing glow based on progress
+                    finalColor += emissiveColor * (1.0 - progress) * 0.5 * (sin(time * 5.0) * 0.5 + 0.5);
+                    
+                    gl_FragColor = vec4(finalColor, 1.0);
+                }
+            `;
+            
+            const timerRingVertexShader = `
+                varying vec2 vUv;
+                varying vec3 vNormal;
+                varying vec3 vPosition;
+                
+                void main() {
+                    vUv = uv;
+                    vNormal = normalMatrix * normal;
+                    vPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `;
+            
+            // Particle vertex shader for more dynamic movement
+            const particleVertexShader = `
+                uniform float time;
+                uniform float progress;
+                uniform float isRunning;
+                
+                attribute float size;
+                
+                varying vec2 vUv;
+                varying vec3 vColor;
+                
+                void main() {
+                    vUv = uv;
+                    
+                    // Get position and add dynamic wave movement
+                    vec3 pos = position;
+                    
+                    // Add waves based on timer progress
+                    float amplitude = 0.1 * (isRunning > 0.5 ? 1.0 : 0.3);
+                    float frequency = 2.0;
+                    float waveX = sin(time * frequency + position.x * 3.0) * amplitude;
+                    float waveY = cos(time * frequency * 0.8 + position.y * 3.0) * amplitude;
+                    float waveZ = sin(time * frequency * 0.6 + position.z * 3.0) * amplitude;
+                    
+                    // Only apply stronger effects when the timer is running
+                    float runningFactor = isRunning > 0.5 ? 1.0 : 0.3;
+                    
+                    // Spiral motion intensifies as timer progresses
+                    float spiralIntensity = (1.0 - progress) * runningFactor;
+                    float spiralX = cos(time + position.z * 2.0) * spiralIntensity * 0.2;
+                    float spiralY = sin(time + position.z * 2.0) * spiralIntensity * 0.2;
+                    
+                    // Add all effects
+                    pos.x += waveX + spiralX;
+                    pos.y += waveY + spiralY;
+                    pos.z += waveZ;
+                    
+                    // Project to screen space
+                    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+                    gl_Position = projectionMatrix * mvPosition;
+                    
+                    // Set point size
+                    gl_PointSize = size * (300.0 / -mvPosition.z);
+                }
+            `;
+            
+            // Scene-wide ambient shader effect (post-processing)
+            const customBackgroundShader = {
+                uniforms: {
+                    "tDiffuse": { value: null },
+                    "time": { value: 0.0 },
+                    "progress": { value: 1.0 },
+                    "isRunning": { value: 0.0 },
+                    "theme": { value: new THREE.Vector3(
+                        parseInt(currentTheme.primary.substring(1, 3), 16) / 255,
+                        parseInt(currentTheme.primary.substring(3, 5), 16) / 255,
+                        parseInt(currentTheme.primary.substring(5, 7), 16) / 255
+                    )}
+                },
+                vertexShader: `
+                    varying vec2 vUv;
+                    void main() {
+                        vUv = uv;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform sampler2D tDiffuse;
+                    uniform float time;
+                    uniform float progress;
+                    uniform float isRunning;
+                    uniform vec3 theme;
+                    
+                    varying vec2 vUv;
+                    
+                    void main() {
+                        // Get base scene color
+                        vec4 color = texture2D(tDiffuse, vUv);
+                        
+                        // Create vignette effect
+                        vec2 center = vec2(0.5, 0.5);
+                        float dist = distance(vUv, center);
+                        float vignette = smoothstep(0.5, 0.2, dist);
+                        
+                        // Subtle noise pattern
+                        float noise = fract(sin(dot(vUv, vec2(12.9898, 78.233) * time * 0.1)) * 43758.5453);
+                        
+                        // Add subtle wave distortion
+                        float waveIntensity = isRunning * (1.0 - progress) * 0.03;
+                        vec2 offset = vec2(
+                            sin(time * 2.0 + vUv.y * 10.0) * waveIntensity,
+                            cos(time * 1.5 + vUv.x * 10.0) * waveIntensity
+                        );
+                        vec4 distortedColor = texture2D(tDiffuse, vUv + offset);
+                        
+                        // Add time pulse for running timer
+                        float pulse = (sin(time * 5.0) * 0.5 + 0.5) * isRunning * (1.0 - progress) * 0.2;
+                        
+                        // Subtle color shift based on timer progress
+                        vec3 shiftColor = mix(color.rgb, theme, (1.0 - progress) * 0.1);
+                        
+                        // Combine effects
+                        vec3 finalColor = mix(shiftColor, distortedColor.rgb, waveIntensity * 5.0);
+                        finalColor *= (vignette * 0.2 + 0.8); // Add vignette
+                        finalColor += noise * 0.01; // Add subtle noise
+                        finalColor += theme * pulse; // Add timer pulse
+                        
+                        gl_FragColor = vec4(finalColor, color.a);
+                    }
+                `
+            };
+            
+            // Ambient colorful background shader
+            const colorfulBackgroundShader = {
+                uniforms: {
+                    "time": { value: 0.0 },
+                    "resolution": { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+                    "progress": { value: 1.0 },
+                    "isRunning": { value: 0.0 },
+                    "primaryColor": { value: new THREE.Color(currentTheme.primary) },
+                    "secondaryColor": { value: new THREE.Color(currentTheme.secondary) },
+                    "backgroundColor": { value: new THREE.Color(currentTheme.background) }
+                },
+                vertexShader: `
+                    varying vec2 vUv;
+                    
+                    void main() {
+                        vUv = uv;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform float time;
+                    uniform vec2 resolution;
+                    uniform float progress;
+                    uniform float isRunning;
+                    uniform vec3 primaryColor;
+                    uniform vec3 secondaryColor;
+                    uniform vec3 backgroundColor;
+                    
+                    varying vec2 vUv;
+                    
+                    // Simplex noise function
+                    vec3 permute(vec3 x) { return mod(((x*34.0)+1.0)*x, 289.0); }
+                    
+                    float snoise(vec2 v) {
+                        const vec4 C = vec4(0.211324865405187, 0.366025403784439,
+                            -0.577350269189626, 0.024390243902439);
+                        vec2 i  = floor(v + dot(v, C.yy));
+                        vec2 x0 = v -   i + dot(i, C.xx);
+                        vec2 i1;
+                        i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+                        vec4 x12 = x0.xyxy + C.xxzz;
+                        x12.xy -= i1;
+                        i = mod(i, 289.0);
+                        vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 ))
+                            + i.x + vec3(0.0, i1.x, 1.0 ));
+                        vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy),
+                            dot(x12.zw,x12.zw)), 0.0);
+                        m = m*m;
+                        m = m*m;
+                        vec3 x = 2.0 * fract(p * C.www) - 1.0;
+                        vec3 h = abs(x) - 0.5;
+                        vec3 ox = floor(x + 0.5);
+                        vec3 a0 = x - ox;
+                        m *= 1.79284291400159 - 0.85373472095314 * ( a0*a0 + h*h );
+                        vec3 g;
+                        g.x  = a0.x  * x0.x  + h.x  * x0.y;
+                        g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+                        return 130.0 * dot(m, g);
+                    }
+                    
+                    void main() {
+                        // Normalized coordinates
+                        vec2 uv = vUv;
+                        
+                        // Create multiple layers of noise with different scales and speeds
+                        float noiseScale1 = 3.0;
+                        float noiseScale2 = 5.0;
+                        float noiseScale3 = 8.0;
+                        
+                        float timeSpeed1 = time * 0.1;
+                        float timeSpeed2 = time * 0.2;
+                        float timeSpeed3 = time * 0.05;
+                        
+                        // Make noise more dynamic when timer is running
+                        float dynamicFactor = 1.0 + isRunning * (1.0 - progress) * 2.0;
+                        
+                        // Generate noise patterns
+                        float noise1 = snoise(vec2(uv.x * noiseScale1, uv.y * noiseScale1 + timeSpeed1 * dynamicFactor)) * 0.5 + 0.5;
+                        float noise2 = snoise(vec2(uv.x * noiseScale2 - timeSpeed2 * dynamicFactor, uv.y * noiseScale2)) * 0.5 + 0.5;
+                        float noise3 = snoise(vec2(uv.x * noiseScale3 - timeSpeed3 * dynamicFactor, uv.y * noiseScale3 - timeSpeed3 * dynamicFactor)) * 0.5 + 0.5;
+                        
+                        // Combine noise patterns
+                        float finalNoise = noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2;
+                        
+                        // Create colorful gradients
+                        vec3 color1 = mix(backgroundColor, primaryColor, noise1 * 0.7);
+                        vec3 color2 = mix(backgroundColor, secondaryColor, noise2 * 0.6);
+                        
+                        // Create dynamic gradient based on progress
+                        vec3 timerColor = mix(secondaryColor, primaryColor, progress);
+                        vec3 color3 = mix(backgroundColor, timerColor, noise3 * 0.8);
+                        
+                        // Mix colors
+                        vec3 finalColor = color1 * 0.4 + color2 * 0.4 + color3 * 0.2;
+                        
+                        // Vignette effect
+                        float vignette = 1.0 - pow(length(uv - 0.5) * 1.5, 2.0);
+                        finalColor *= vignette;
+                        
+                        // Add subtle pulse when timer is running
+                        if (isRunning > 0.5) {
+                            float pulse = (sin(time * (1.0 + (1.0 - progress) * 3.0)) * 0.5 + 0.5) * (1.0 - progress) * 0.2;
+                            finalColor += primaryColor * pulse;
+                        }
+                        
+                        gl_FragColor = vec4(finalColor, 1.0);
+                    }
+                `
+            };
+
+            // Lighting setup
+            const ambientLight = new THREE.AmbientLight(0x222222, 0.5);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 1, 1);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 1024;
+            directionalLight.shadow.mapSize.height = 1024;
+            scene.add(directionalLight);
+            
+            // Point lights for dynamic lighting
+            const pointLight1 = new THREE.PointLight(0xff0000, 0.5, 10);
+            pointLight1.position.set(-2, 2, 3);
+            scene.add(pointLight1);
+            
+            const pointLight2 = new THREE.PointLight(0x0000ff, 0.5, 10);
+            pointLight2.position.set(2, -2, 3);
+            scene.add(pointLight2);
+            
+            // Create a fog effect
+            scene.fog = new THREE.FogExp2(0x000000, 0.03);
+            
+            // Create central timer object
+            const timerGeometry = new THREE.TorusGeometry(1.5, 0.2, 20, 100);
+            // Use custom shader material for the timer ring
+            const timerMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    color: { value: new THREE.Color(currentTheme.primary) },
+                    emissiveColor: { value: new THREE.Color(currentTheme.secondary) },
+                    time: { value: 0.0 },
+                    progress: { value: 1.0 }
+                },
+                vertexShader: timerRingVertexShader,
+                fragmentShader: timerRingFragmentShader,
+                side: THREE.DoubleSide
+            });
+            
+            const timerRing = new THREE.Mesh(timerGeometry, timerMaterial);
+            timerRing.rotation.x = Math.PI / 2;
+            timerRing.castShadow = true;
+            timerRing.receiveShadow = true;
+            scene.add(timerRing);
+            
+            // Create particles with gemstone-shaped geometries
+            const particles = [];
+            const particleCount = 150;
+            
+            // Create different gemstone cut geometries
+            const createRoundCut = () => {
+                const geo = new THREE.SphereGeometry(0.12, 32, 32);
+                // Add facet-like features
+                for (let i = 0; i < geo.attributes.position.count; i++) {
+                    const x = geo.attributes.position.getX(i);
+                    const y = geo.attributes.position.getY(i);
+                    const z = geo.attributes.position.getZ(i);
+                    
+                    const dist = Math.sqrt(x*x + y*y + z*z);
+                    const facetAngle = Math.floor(Math.atan2(y, x) * 16 / Math.PI) * Math.PI / 16;
+                    
+                    geo.attributes.position.setX(i, Math.cos(facetAngle) * dist * 0.92);
+                    geo.attributes.position.setY(i, Math.sin(facetAngle) * dist * 0.92);
+                }
+                geo.computeVertexNormals();
+                return geo;
+            };
+            
+            const createEmeraldCut = () => {
+                const geo = new THREE.BoxGeometry(0.1, 0.15, 0.1, 4, 4, 4);
+                // Bevel the corners
+                for (let i = 0; i < geo.attributes.position.count; i++) {
+                    const x = geo.attributes.position.getX(i);
+                    const y = geo.attributes.position.getY(i);
+                    const z = geo.attributes.position.getZ(i);
+                    
+                    const scaleFactor = 0.9 - 0.1 * (Math.abs(x) + Math.abs(y) + Math.abs(z)) / 
+                                        (Math.abs(geo.parameters.width) + Math.abs(geo.parameters.height) + Math.abs(geo.parameters.depth));
+                    
+                    geo.attributes.position.setX(i, x * scaleFactor);
+                    geo.attributes.position.setY(i, y * (scaleFactor + 0.05)); // Make it slightly taller
+                    geo.attributes.position.setZ(i, z * scaleFactor);
+                }
+                geo.computeVertexNormals();
+                return geo;
+            };
+            
+            const createPrincessCut = () => {
+                const geo = new THREE.BoxGeometry(0.12, 0.12, 0.12, 3, 3, 3);
+                // Create pyramid-like top
+                for (let i = 0; i < geo.attributes.position.count; i++) {
+                    const x = geo.attributes.position.getX(i);
+                    const y = geo.attributes.position.getY(i);
+                    const z = geo.attributes.position.getZ(i);
+                    
+                    if (y > 0) {
+                        const factor = 1 - (y / (geo.parameters.height/2)) * 0.3;
+                        geo.attributes.position.setX(i, x * factor);
+                        geo.attributes.position.setZ(i, z * factor);
+                    }
+                }
+                geo.computeVertexNormals();
+                return geo;
+            };
+            
+            const createOvalCut = () => {
+                const geo = new THREE.SphereGeometry(0.1, 32, 32);
+                // Stretch to oval shape
+                for (let i = 0; i < geo.attributes.position.count; i++) {
+                    const x = geo.attributes.position.getX(i);
+                    const y = geo.attributes.position.getY(i);
+                    const z = geo.attributes.position.getZ(i);
+                    
+                    geo.attributes.position.setX(i, x * 1.3);
+                    geo.attributes.position.setZ(i, z * 0.9);
+                }
+                geo.computeVertexNormals();
+                return geo;
+            };
+            
+            const createMarquiseCut = () => {
+                const geo = new THREE.SphereGeometry(0.1, 32, 32);
+                // Create pointed oval shape
+                for (let i = 0; i < geo.attributes.position.count; i++) {
+                    const x = geo.attributes.position.getX(i);
+                    const y = geo.attributes.position.getY(i);
+                    const z = geo.attributes.position.getZ(i);
+                    
+                    geo.attributes.position.setX(i, x * 1.8);
+                    geo.attributes.position.setZ(i, z * 0.8);
+                    
+                    // Create points at edges
+                    if (Math.abs(x) > 0.07) {
+                        const pointFactor = 1 + Math.abs(x) * 3;
+                        geo.attributes.position.setX(i, x * pointFactor);
+                    }
+                }
+                geo.computeVertexNormals();
+                return geo;
+            };
+            
+            const createHeartCut = () => {
+                const geo = new THREE.SphereGeometry(0.1, 32, 32);
+                // Create heart shape
+                for (let i = 0; i < geo.attributes.position.count; i++) {
+                    const x = geo.attributes.position.getX(i);
+                    const y = geo.attributes.position.getY(i);
+                    const z = geo.attributes.position.getZ(i);
+                    
+                    if (y < 0) {
+                        // Create point at bottom
+                        geo.attributes.position.setY(i, y * 1.3);
+                    } else if (y > 0 && Math.abs(x) < 0.05) {
+                        // Create indentation at top
+                        geo.attributes.position.setY(i, y * 0.8);
+                    }
+                    
+                    // Widen sides for heart shape
+                    if (y > 0) {
+                        geo.attributes.position.setX(i, x * 1.2);
+                    }
+                }
+                geo.computeVertexNormals();
+                return geo;
+            };
+            
+            // Gemstone geometries
+            const gemstoneGeometries = [
+                createRoundCut(),
+                createEmeraldCut(),
+                createPrincessCut(),
+                createOvalCut(),
+                createMarquiseCut(),
+                createHeartCut(),
+                new THREE.OctahedronGeometry(0.12, 2), // Diamond-like octahedron
+                new THREE.IcosahedronGeometry(0.12, 1)  // Another crystal form
+            ];
+
+            for (let i = 0; i < particleCount; i++) {
+                const gemGeometry = gemstoneGeometries[Math.floor(Math.random() * gemstoneGeometries.length)];
+                
+                // Enhanced gemstone-like material
+                const gemMaterial = new THREE.MeshPhysicalMaterial({ 
+                    color: new THREE.Color(currentTheme.primary),
+                    metalness: 0.1,
+                    roughness: 0.05 + Math.random() * 0.1, // Lower roughness for shinier look
+                    emissive: new THREE.Color(currentTheme.secondary).multiplyScalar(0.2),
+                    transparent: true,
+                    opacity: 0.9,
+                    flatShading: false,
+                    clearcoat: 0.8,          // Add clearcoat for gemstone shine
+                    clearcoatRoughness: 0.2, // Slightly rough clearcoat
+                    ior: 1.5 + Math.random(), // Index of refraction for gemstones (1.5-2.5)
+                    reflectivity: 0.8,
+                    transmission: 0.5,        // Make it slightly transparent
+                    envMapIntensity: 1.5      // Enhance environment reflections
+                });
+                
+                const particle = new THREE.Mesh(gemGeometry, gemMaterial);
+                
+                // Distribute gemstones in a sphere
+                const radius = 4 + Math.random() * 4;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.random() * Math.PI;
+                
+                particle.position.x = radius * Math.sin(phi) * Math.cos(theta);
+                particle.position.y = radius * Math.sin(phi) * Math.sin(theta);
+                particle.position.z = radius * Math.cos(phi);
+                
+                // Add dynamic properties to each gemstone
+                particle.userData = {
+                    speed: Math.random() * 0.02 + 0.01,
+                    rotationSpeed: Math.random() * 0.01 + 0.005, // Slower rotation for gemstones
+                    amplitude: Math.random() * 0.3 + 0.1,
+                    phase: Math.random() * Math.PI * 2,
+                    originalRadius: radius,
+                    originalPosition: particle.position.clone(),
+                    gemType: Math.floor(Math.random() * gemstoneGeometries.length) // Track gem type
+                };
+                
+                particle.castShadow = true;
+                particles.push(particle);
+                scene.add(particle);
+            }
+
+            // Add a subtle background star field
+            const starsGeometry = new THREE.BufferGeometry();
+            const starCount = 1500; // Increased from 800
+            const starPositions = new Float32Array(starCount * 3);
+            const starSizes = new Float32Array(starCount);
+            const starColors = new Float32Array(starCount * 3);
+            
+            for (let i = 0; i < starCount; i++) {
+                const i3 = i * 3;
+                starPositions[i3] = (Math.random() - 0.5) * 120; // Wider distribution
+                starPositions[i3 + 1] = (Math.random() - 0.5) * 120;
+                starPositions[i3 + 2] = (Math.random() - 0.5) * 120;
+                
+                // Smaller star sizes for subtler effect
+                starSizes[i] = Math.random() * 1.5 + 0.3;
+                
+                // Add slight color variation to stars
+                const colorChoice = Math.random();
+                if (colorChoice > 0.95) {
+                    // Red-ish stars (5%)
+                    starColors[i3] = 1.0;
+                    starColors[i3 + 1] = 0.6 + Math.random() * 0.2;
+                    starColors[i3 + 2] = 0.6 + Math.random() * 0.2;
+                } else if (colorChoice > 0.90) {
+                    // Blue-ish stars (5%)
+                    starColors[i3] = 0.6 + Math.random() * 0.2;
+                    starColors[i3 + 1] = 0.6 + Math.random() * 0.2;
+                    starColors[i3 + 2] = 1.0;
+                } else if (colorChoice > 0.85) {
+                    // Gold-ish stars (5%)
+                    starColors[i3] = 1.0;
+                    starColors[i3 + 1] = 0.9 + Math.random() * 0.1;
+                    starColors[i3 + 2] = 0.5 + Math.random() * 0.2;
+                } else {
+                    // White/bluish white stars (85%) - dimmer overall
+                    const brightness = 0.6 + Math.random() * 0.2;
+                    starColors[i3] = brightness * (0.9 + Math.random() * 0.1);
+                    starColors[i3 + 1] = brightness * (0.9 + Math.random() * 0.1);
+                    starColors[i3 + 2] = brightness;
+                }
+            }
+            
+            starsGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+            starsGeometry.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
+            starsGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+            
+            // Create a better sprite texture for stars
+            const starCanvas = document.createElement('canvas');
+            starCanvas.width = 64;
+            starCanvas.height = 64;
+            const starCtx = starCanvas.getContext('2d');
+            const gradient = starCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+            gradient.addColorStop(0.4, 'rgba(255, 255, 255, 0.8)');
+            gradient.addColorStop(0.8, 'rgba(255, 255, 255, 0.2)');
+            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            starCtx.fillStyle = gradient;
+            starCtx.fillRect(0, 0, 64, 64);
+            
+            // Add fewer rays to make stars look smaller and more delicate
+            starCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            starCtx.lineWidth = 0.5;
+            for (let i = 0; i < 4; i++) {
+                const angle = Math.PI * 2 * (i / 4);
+                const length = 18 + Math.random() * 6;
+                starCtx.beginPath();
+                starCtx.moveTo(32, 32);
+                starCtx.lineTo(32 + Math.cos(angle) * length, 32 + Math.sin(angle) * length);
+                starCtx.stroke();
+            }
+            
+            const starTexture = new THREE.CanvasTexture(starCanvas);
+            
+            const starsMaterial = new THREE.PointsMaterial({
+                size: 1.8, // Reduced size
+                transparent: true,
+                opacity: 0.8, // Slightly less opaque
+                sizeAttenuation: true,
+                map: starTexture,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending,
+                vertexColors: true
+            });
+            
+            const starField = new THREE.Points(starsGeometry, starsMaterial);
+            scene.add(starField);
+
+            // Create additional 3D geometric gemstone stars
+            const gemstoneStars = new THREE.Group();
+            scene.add(gemstoneStars);
+            
+            // Create different gemstone cuts for the decorative stars
+            const createTinyGemstone = (type) => {
+                let geo;
+                switch(type) {
+                    case 0: // Tiny brilliant cut
+                        geo = new THREE.OctahedronGeometry(0.06, 1);
+                        break;
+                    case 1: // Tiny princess cut
+                        geo = new THREE.BoxGeometry(0.055, 0.055, 0.055);
+                        // Taper top and bottom slightly
+                        for (let i = 0; i < geo.attributes.position.count; i++) {
+                            const y = geo.attributes.position.getY(i);
+                            if (Math.abs(y) > 0.02) {
+                                const x = geo.attributes.position.getX(i);
+                                const z = geo.attributes.position.getZ(i);
+                                const factor = 0.85;
+                                geo.attributes.position.setX(i, x * factor);
+                                geo.attributes.position.setZ(i, z * factor);
+                            }
+                        }
+                        break;
+                    case 2: // Tiny trillion cut (triangular)
+                        geo = new THREE.TetrahedronGeometry(0.06, 0);
+                        break;
+                    case 3: // Tiny emerald cut
+                        geo = new THREE.BoxGeometry(0.04, 0.06, 0.05);
+                        break;
+                    case 4: // Tiny marquise cut
+                        geo = new THREE.SphereGeometry(0.05, 8, 8);
+                        // Stretch to pointed oval
+                        for (let i = 0; i < geo.attributes.position.count; i++) {
+                            const x = geo.attributes.position.getX(i);
+                            geo.attributes.position.setX(i, x * 1.8);
+                        }
+                        break;
+                    default: // Tiny round
+                        geo = new THREE.IcosahedronGeometry(0.05, 0);
+                }
+                geo.computeVertexNormals();
+                return geo;
+            };
+            
+            // Create 350 tiny gemstone stars
+            for (let i = 0; i < 350; i++) {
+                const gemType = Math.floor(Math.random() * 6);
+                const geometry = createTinyGemstone(gemType);
+                
+                // Create a vibrant gemstone material - more colorful than normal gemstones
+                const hue = Math.random(); // Full color spectrum
+                const saturation = Math.random() * 0.6 + 0.4; // High saturation
+                const lightness = Math.random() * 0.3 + 0.7; // Bright
+                const gemColor = new THREE.Color().setHSL(hue, saturation, lightness);
+                
+                let material;
+                
+                // Create a gem-appropriate material
+                material = new THREE.MeshPhysicalMaterial({
+                    color: gemColor,
+                    emissive: gemColor.clone().multiplyScalar(0.6),
+                    metalness: 0.1 + Math.random() * 0.1,
+                    roughness: 0.05 + Math.random() * 0.1,
+                    transparent: true,
+                    opacity: 0.9,
+                    ior: 1.5 + Math.random() * 0.8,
+                    transmission: 0.3 + Math.random() * 0.3,
+                    specularIntensity: 1.0,
+                    specularColor: new THREE.Color(0xffffff),
+                    clearcoat: 0.8,
+                    clearcoatRoughness: 0.2
+                });
+                
+                const gemStar = new THREE.Mesh(geometry, material);
+                const scale = Math.random() * 0.6 + 0.4; // Smaller scale for micro-gems
+                gemStar.scale.set(scale, scale, scale);
+                
+                // Random position within a larger sphere volume
+                const radius = 30 + Math.random() * 70;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.random() * Math.PI;
+                
+                gemStar.position.x = radius * Math.sin(phi) * Math.cos(theta);
+                gemStar.position.y = radius * Math.sin(phi) * Math.sin(theta);
+                gemStar.position.z = radius * Math.cos(phi);
+                
+                // Random rotation
+                gemStar.rotation.x = Math.random() * Math.PI * 2;
+                gemStar.rotation.y = Math.random() * Math.PI * 2;
+                gemStar.rotation.z = Math.random() * Math.PI * 2;
+                
+                // Add metadata for animation
+                gemStar.userData = {
+                    twinkleSpeed: Math.random() * 0.01 + 0.005,
+                    originalOpacity: material.opacity,
+                    originalEmissive: material.emissive.clone(),
+                    rotationSpeed: (Math.random() - 0.5) * 0.002,
+                    pulseSpeed: Math.random() * 0.01 + 0.005,
+                    originalScale: scale,
+                    pulseAmount: Math.random() * 0.1 + 0.05, // Subtle pulse
+                    colorShiftSpeed: Math.random() * 0.0005 + 0.0002,
+                    orbitSpeed: (Math.random() - 0.5) * 0.0003,
+                    gemType: gemType
+                };
+                
+                gemstoneStars.add(gemStar);
+            }
+
+            // Create some special flare gem clusters (replace flare stars)
+            for (let i = 0; i < 20; i++) {
+                const clusterGroup = new THREE.Group();
+                
+                // Create a cluster of 2-4 tiny gems
+                const clusterSize = Math.floor(Math.random() * 3) + 2;
+                const mainColor = new THREE.Color().setHSL(Math.random(), 0.8, 0.7);
+                
+                for(let j = 0; j < clusterSize; j++) {
+                    const gemType = Math.floor(Math.random() * 6);
+                    const geometry = createTinyGemstone(gemType);
+                    
+                    // Create gem material with slight variation from main color
+                    const colorVariation = (Math.random() - 0.5) * 0.1;
+                    const hsl = {};
+                    mainColor.getHSL(hsl);
+                    const gemColor = new THREE.Color().setHSL(
+                        (hsl.h + colorVariation) % 1.0, 
+                        hsl.s, 
+                        hsl.l + (Math.random() - 0.5) * 0.1
+                    );
+                    
+                    const material = new THREE.MeshPhysicalMaterial({
+                        color: gemColor,
+                        emissive: gemColor.clone().multiplyScalar(0.5),
+                        metalness: 0.1,
+                        roughness: 0.05,
+                        transparent: true,
+                        opacity: 0.9,
+                        ior: 2.0,
+                        transmission: 0.4,
+                        clearcoat: 0.9
+                    });
+                    
+                    const tinyGem = new THREE.Mesh(geometry, material);
+                    const scale = 0.6 + Math.random() * 0.4;
+                    tinyGem.scale.set(scale, scale, scale);
+                    
+                    // Position gems in a small cluster
+                    tinyGem.position.x = (Math.random() - 0.5) * 0.15;
+                    tinyGem.position.y = (Math.random() - 0.5) * 0.15;
+                    tinyGem.position.z = (Math.random() - 0.5) * 0.15;
+                    
+                    tinyGem.rotation.x = Math.random() * Math.PI * 2;
+                    tinyGem.rotation.y = Math.random() * Math.PI * 2;
+                    tinyGem.rotation.z = Math.random() * Math.PI * 2;
+                    
+                    tinyGem.userData = {
+                        rotationSpeed: (Math.random() - 0.5) * 0.01,
+                        originalEmissive: material.emissive.clone()
+                    };
+                    
+                    clusterGroup.add(tinyGem);
+                }
+                
+                // Position the cluster
+                const radius = 35 + Math.random() * 40;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.random() * Math.PI;
+                
+                clusterGroup.position.x = radius * Math.sin(phi) * Math.cos(theta);
+                clusterGroup.position.y = radius * Math.sin(phi) * Math.sin(theta);
+                clusterGroup.position.z = radius * Math.cos(phi);
+                
+                // Random rotation for the entire cluster
+                clusterGroup.rotation.x = Math.random() * Math.PI * 2;
+                clusterGroup.rotation.y = Math.random() * Math.PI * 2;
+                clusterGroup.rotation.z = Math.random() * Math.PI * 2;
+                
+                // Add metadata for animation
+                clusterGroup.userData = {
+                    rotationSpeed: Math.random() * 0.002 + 0.001,
+                    pulseSpeed: Math.random() * 0.03 + 0.01,
+                    orbitSpeed: (Math.random() - 0.5) * 0.0005
+                };
+                
+                gemstoneStars.add(clusterGroup);
+            }
+
+            // Setup post-processing
+            const composer = new THREE.EffectComposer(renderer);
+            
+            // Set scene background color
+            scene.background = new THREE.Color(currentTheme.background);
+            
+            // Position starfield in scene
+            starField.position.z = 0;
+            starField.renderOrder = -90;
+            
+            // Position geometric stars
+            gemstoneStars.position.z = 0;
+            gemstoneStars.renderOrder = -80;
+            
+            // Make fog less dense and start further away
+            scene.fog = new THREE.FogExp2(new THREE.Color(currentTheme.background).multiplyScalar(0.5).getHex(), 0.005);
+            scene.fog.near = 70; // Start fog further away to keep stars visible
+            
+            // Main render pass for everything
+            const renderPass = new THREE.RenderPass(scene, camera);
+            renderPass.clear = true;
+            composer.addPass(renderPass);
+            
+            const bloomPass = new THREE.UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                0.6,    // strength (reduced from 0.8)
+                0.4,    // radius (reduced from 0.5)
+                0.8    // threshold (increased from 0.75 to process fewer bright pixels)
+            );
+            composer.addPass(bloomPass);
+            
+            // Add custom post-processing effect
+            const customBackgroundPass = new THREE.ShaderPass(customBackgroundShader);
+            customBackgroundPass.renderToScreen = true;
+            composer.addPass(customBackgroundPass);
+
+            camera.position.z = 8;
+
+            // Animation with enhanced dynamic effects
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = Date.now() * 0.001;
+
+                // Update timer progress for visual effects
+                if (isRunning && defaultDuration > 0) {
+                    timerProgress = timeLeft / defaultDuration;
+                }
+                
+                // Update shader uniforms
+                timerMaterial.uniforms.time.value = time;
+                timerMaterial.uniforms.progress.value = timerProgress;
+                
+                customBackgroundPass.uniforms.time.value = time;
+                customBackgroundPass.uniforms.progress.value = timerProgress;
+                customBackgroundPass.uniforms.isRunning.value = isRunning ? 1.0 : 0.0;
+                
+                // Rotate timer ring based on progress
+                timerRing.rotation.z = Math.PI * 2 * (1 - timerProgress);
+                
+                // Pulse effect based on timer state
+                const pulseIntensity = isRunning ? 0.2 : 0.05;
+                const pulseFactor = 1 + Math.sin(time * 3) * pulseIntensity;
+                timerRing.scale.set(pulseFactor, pulseFactor, pulseFactor);
+                
+                // Update all particles but with simplified animation
+                for (let i = 0; i < particles.length; i++) {
+                    const particle = particles[i];
+                    const { speed, rotationSpeed, amplitude, phase, originalRadius, originalPosition } = particle.userData;
+                
+                    // Dynamic rotation - always update for smoothness
+                    particle.rotation.x += rotationSpeed;
+                    particle.rotation.y += rotationSpeed * 0.8;
+                    
+                    // Orbit motion with timer influence
+                    const orbitSpeed = speed * (isRunning ? 1.5 : 0.5);
+                    const orbitRadius = originalRadius * (isRunning ? (0.8 + timerProgress * 0.4) : 1);
+                    const theta = time * orbitSpeed + phase;
+                    
+                    // Performance: Cache sin/cos and reuse
+                    const sinTheta = Math.sin(theta);
+                    const cosTheta = Math.cos(theta);
+                    const x = originalPosition.x * (sinTheta * 0.1 + 0.9);
+                    const y = originalPosition.y * (cosTheta * 0.1 + 0.9);
+                    const z = originalPosition.z * (Math.sin(theta * 0.5) * 0.1 + 0.9);
+                    
+                    // Avoid calculating distance for normalization and use a direct approach
+                    // This is an approximation that works well for small deviations
+                    const approxScale = orbitRadius / originalRadius;
+                    particle.position.set(
+                        x * approxScale,
+                        y * approxScale,
+                        z * approxScale
+                    );
+                    
+                    // Dynamic scaling with timer influence - always update for smoothness
+                    const scaleFactor = 1 + Math.sin(time * 2 + phase) * 0.2;
+                    const timerScaleFactor = isRunning ? (0.8 + timerProgress * 0.4) : 1;
+                    particle.scale.setScalar(scaleFactor * timerScaleFactor);
+                    
+                    // Update particle color based on timer progress (only when running)
+                    if (isRunning && i % 3 === 0) { // Only update some particles' colors each frame
+                        // Cache and reuse theme colors
+                        if (!window.themeColorCache) {
+                            window.themeColorCache = {
+                                primary: new THREE.Color(currentTheme.primary),
+                                secondary: new THREE.Color(currentTheme.secondary)
+                            };
+                        }
+                        
+                        // Simple color lerp
+                        const r = window.themeColorCache.secondary.r + (window.themeColorCache.primary.r - window.themeColorCache.secondary.r) * timerProgress;
+                        const g = window.themeColorCache.secondary.g + (window.themeColorCache.primary.g - window.themeColorCache.secondary.g) * timerProgress;
+                        const b = window.themeColorCache.secondary.b + (window.themeColorCache.primary.b - window.themeColorCache.secondary.b) * timerProgress;
+                        
+                        particle.material.color.setRGB(r, g, b);
+                        particle.material.emissive.setRGB(r * 0.3, g * 0.3, b * 0.3);
+                    }
+                }
+                
+                // Animate point lights
+                pointLight1.position.x = Math.sin(time * 0.7) * 3;
+                pointLight1.position.y = Math.cos(time * 0.5) * 3;
+                pointLight1.color.setHSL((time * 0.1) % 1, 0.5, 0.5);
+                
+                pointLight2.position.x = -Math.sin(time * 0.3) * 3;
+                pointLight2.position.y = -Math.cos(time * 0.2) * 3;
+                pointLight2.color.setHSL(((time * 0.1) + 0.5) % 1, 0.5, 0.5);
+                
+                // Update star field rotation smoothly every frame
+                starField.rotation.x = time * 0.01;
+                starField.rotation.y = time * 0.02;
+                
+                // Gemstone stars - use a better distribution strategy for smoother appearance
+                // Use the modulo approach on the object index rather than time
+                for (let i = 0; i < gemstoneStars.children.length; i++) {
+                    // Only update a subset of objects each frame, based on their index
+                    // This distributes updates more evenly and avoids visible chunking
+                    if (i % 2 !== Math.floor(time * 10) % 2) continue;
+                    
+                    const star = gemstoneStars.children[i];
+                    
+                    // Different animation based on star type
+                    if (star instanceof THREE.Line) {
+                        // Animate star lines (twinkle effect)
+                        const { twinkleSpeed, originalOpacity, rotationSpeed } = star.userData;
+                        const material = star.material;
+                        
+                        // Enhanced twinkle opacity with timer influence
+                        const timerFactor = isRunning ? (1.0 - timerProgress) * 0.3 : 0;
+                        material.opacity = originalOpacity * (0.7 + Math.sin(time * twinkleSpeed * 5) * 0.3) + timerFactor;
+                        
+                        // Rotation - simple and effective
+                        star.rotation.z += rotationSpeed;
+                        star.rotation.x += rotationSpeed * 0.5;
+                    } 
+                    else if (star instanceof THREE.Group) {
+                        // Animate gem clusters
+                        const { rotationSpeed, pulseSpeed, orbitSpeed } = star.userData;
+                        
+                        // Rotate the entire cluster
+                        star.rotation.z += rotationSpeed * (isRunning ? 1.5 : 1.0);
+                        
+                        // Add wobble - simple sine wave
+                        star.rotation.x = Math.sin(time * pulseSpeed) * 0.1;
+                        
+                        // Add orbital motion to clusters if significant
+                        if (orbitSpeed && Math.abs(orbitSpeed) > 0.0002) {
+                            const distance = star.position.length();
+                            const angle = time * orbitSpeed;
+                            star.position.x = Math.cos(angle) * distance;
+                            star.position.z = Math.sin(angle) * distance;
+                        }
+                        
+                        // Update all gems in small clusters, but only one in larger clusters
+                        const updateAll = star.children.length <= 3;
+                        const gemToUpdate = updateAll ? -1 : Math.floor(time * 3) % star.children.length;
+                        
+                        for (let j = 0; j < star.children.length; j++) {
+                            if (updateAll || j === gemToUpdate) {
+                                const gem = star.children[j];
+                                
+                                // Rotate individual gems
+                                if (gem.userData.rotationSpeed) {
+                                    gem.rotation.x += gem.userData.rotationSpeed;
+                                    gem.rotation.y += gem.userData.rotationSpeed * 0.7;
+                                }
+                                
+                                // Pulsing emissive intensity for running timer
+                                if (gem.material.emissive && gem.userData.originalEmissive && isRunning) {
+                                    const emissiveFactor = 1.0 + Math.sin(time * 3) * 0.2 + (1.0 - timerProgress) * 0.3;
+                                    gem.material.emissive.copy(gem.userData.originalEmissive).multiplyScalar(emissiveFactor);
+                                }
+                            }
+                        }
+                    }
+                    else if (star instanceof THREE.Mesh) {
+                        // Animate gemstone stars
+                        const { pulseSpeed, originalScale, pulseAmount, rotationSpeed, originalEmissive, orbitSpeed, gemType } = star.userData;
+                        
+                        // Pulse scale - always update scale for smooth appearance
+                        const pulseVal = Math.sin(time * pulseSpeed * 3) * pulseAmount;
+                        const timerScale = isRunning ? (1.0 - timerProgress) * 0.2 : 0;
+                        star.scale.setScalar(originalScale * (1.0 + pulseVal + timerScale));
+                        
+                        // Rotation - always update for smooth appearance
+                        // Use a simple approach without conditionals
+                        star.rotation.x += rotationSpeed * (gemType % 2 === 0 ? 1.2 : 0.8);
+                        star.rotation.y += rotationSpeed * 0.7;
+                        
+                        // Add subtle orbital movement for some stars
+                        if (orbitSpeed && Math.abs(orbitSpeed) > 0.0002) {
+                            const distance = star.position.length();
+                            const angle = time * orbitSpeed;
+                            star.position.x = Math.cos(angle) * distance;
+                            star.position.z = Math.sin(angle) * distance;
+                        }
+                        
+                        // Update emissive properties less frequently
+                        if (star.material.emissive && originalEmissive && i % 5 === 0) {
+                            // Simplified emissive update
+                            const emissiveFactor = 1.0 + Math.sin(time * 2) * 0.2 + (isRunning ? (1.0 - timerProgress) * 0.3 : 0);
+                            star.material.emissive.copy(originalEmissive).multiplyScalar(emissiveFactor);
+                        }
+                    }
+                }
+                
+                // Optimize starfield animation - update only some stars each frame
+                // Use a more efficient approach that's still visually smooth
+                // This avoids the complexity of time-based throttling
+                const starUpdateCount = Math.min(100, Math.floor(starCount * 0.05)); // 5% of stars per frame
+                const starIndexOffset = Math.floor(time * 60) % starCount;
+                
+                let needsUpdate = false;
+                const positions = starField.geometry.attributes.position.array;
+                const sizes = starField.geometry.attributes.size.array;
+                const colors = starField.geometry.attributes.color.array;
+                
+                for (let i = 0; i < starUpdateCount; i++) {
+                    // Use a rotating offset to distribute updates evenly
+                    const idx = (starIndexOffset + i) % starCount;
+                    const i3 = idx * 3;
+                    
+                    // Subtle position shift for twinkling effect
+                    const smallShift = (Math.random() - 0.5) * 0.03;
+                    positions[i3] += smallShift;
+                    positions[i3 + 1] += smallShift;
+                    positions[i3 + 2] += smallShift;
+                    
+                    // Simple size variation within bounds
+                    sizes[idx] = Math.max(0.3, Math.min(2.0, sizes[idx] + (Math.random() - 0.5) * 0.05));
+                    
+                    needsUpdate = true;
+                }
+                
+                // Timer-based star effects - simpler but still effective
+                if (isRunning && Math.random() > 0.8) {
+                    const pulseIntensity = (1.0 - timerProgress) * 0.15;
+                    const pulseCount = Math.min(10, Math.floor(starCount * 0.005));
+                    
+                    for (let i = 0; i < pulseCount; i++) {
+                        const idx = Math.floor(Math.random() * starCount);
+                        const i3 = idx * 3;
+                        
+                        // Brighten random stars based on timer
+                        colors[i3] = Math.min(1.0, colors[i3] + pulseIntensity);
+                        colors[i3 + 1] = Math.min(1.0, colors[i3 + 1] + pulseIntensity);
+                        colors[i3 + 2] = Math.min(1.0, colors[i3 + 2] + pulseIntensity);
+                        
+                        // Increase size slightly
+                        sizes[idx] = Math.min(2.5, sizes[idx] + pulseIntensity * 0.5);
+                        
+                        needsUpdate = true;
+                    }
+                }
+                
+                if (needsUpdate) {
+                    starField.geometry.attributes.position.needsUpdate = true;
+                    starField.geometry.attributes.size.needsUpdate = true;
+                    starField.geometry.attributes.color.needsUpdate = true;
+                }
+                
+                // Update controls
+                controls.update();
+
+                // Render with composer for post-processing effects
+                composer.render();
+        }
+
+        // Timer functions
+        function updateTimer() {
+            const minutes = Math.floor(timeLeft / 60);
+            const seconds = timeLeft % 60;
+            document.getElementById('timer').textContent = 
+                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        function updateDurationDisplay() {
+            const minutes = Math.floor(defaultDuration / 60);
+            document.getElementById('duration-display').textContent = `${minutes} min`;
+        }
+
+        function startTimer() {
+            if (!isRunning) {
+                isRunning = true;
+                timerInterval = setInterval(() => {
+                    if (timeLeft > 0) {
+                        timeLeft--;
+                        updateTimer();
+                    } else {
+                        clearInterval(timerInterval);
+                        isRunning = false;
+                        alert('Time is up!');
+                    }
+                }, 1000);
+            }
+        }
+
+        function pauseTimer() {
+            clearInterval(timerInterval);
+            isRunning = false;
+        }
+
+        function resetTimer() {
+            clearInterval(timerInterval);
+            isRunning = false;
+            timeLeft = defaultDuration;
+            updateTimer();
+        }
+
+        function updateQuote() {
+            const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
+            document.getElementById('quote').textContent = randomQuote;
+        }
+
+        // Event listeners
+        document.getElementById('start').addEventListener('click', startTimer);
+        document.getElementById('pause').addEventListener('click', pauseTimer);
+        document.getElementById('reset').addEventListener('click', resetTimer);
+
+        document.getElementById('increase-time').addEventListener('click', () => {
+            if (!isRunning) {
+                defaultDuration = Math.min(defaultDuration + 5 * 60, 60 * 60); // Max 60 minutes
+                timeLeft = defaultDuration;
+                updateTimer();
+                updateDurationDisplay();
+            }
+        });
+
+        document.getElementById('decrease-time').addEventListener('click', () => {
+            if (!isRunning) {
+                defaultDuration = Math.max(defaultDuration - 5 * 60, 5 * 60); // Min 5 minutes
+                timeLeft = defaultDuration;
+                updateTimer();
+                updateDurationDisplay();
+            }
+        });
+
+        document.getElementById('theme-selector').addEventListener('change', (e) => {
+                currentTheme = themes[e.target.value];
+                document.documentElement.style.setProperty('--primary-color', currentTheme.primary);
+                document.documentElement.style.setProperty('--secondary-color', currentTheme.secondary);
+                document.documentElement.style.setProperty('--background-color', currentTheme.background);
+                
+                // Update 3D objects with new theme
+                timerMaterial.uniforms.color.value.setStyle(currentTheme.primary);
+                timerMaterial.uniforms.emissiveColor.value.setStyle(currentTheme.secondary);
+                
+                // Update shader theme vector
+                customBackgroundPass.uniforms.theme.value = new THREE.Vector3(
+                    parseInt(currentTheme.primary.substring(1, 3), 16) / 255,
+                    parseInt(currentTheme.primary.substring(3, 5), 16) / 255,
+                    parseInt(currentTheme.primary.substring(5, 7), 16) / 255
+                );
+                
+                // Update scene background
+                scene.background.setStyle(currentTheme.background);
+                scene.fog.color.setStyle(currentTheme.background);
+                
+                // Update particle colors
+                particles.forEach(particle => {
+                    particle.material.color.setStyle(currentTheme.primary);
+                    particle.material.emissive.setStyle(currentTheme.secondary).multiplyScalar(0.3);
+                });
+                
+                // Update starfield colors based on theme
+                const colors = starField.geometry.attributes.color.array;
+                for (let i = 0; i < starCount; i++) {
+                    const i3 = i * 3;
+                    const colorChoice = Math.random();
+                    
+                    if (colorChoice > 0.95) {
+                        // Theme-based accent color (5%)
+                        const themeColor = new THREE.Color(currentTheme.secondary);
+                        colors[i3] = themeColor.r * 0.9 + 0.1;
+                        colors[i3 + 1] = themeColor.g * 0.9 + 0.1;
+                        colors[i3 + 2] = themeColor.b * 0.9 + 0.1;
+                    } else if (colorChoice > 0.90) {
+                        // Theme-based accent color (5%)
+                        const themeColor = new THREE.Color(currentTheme.primary);
+                        colors[i3] = themeColor.r * 0.9 + 0.1;
+                        colors[i3 + 1] = themeColor.g * 0.9 + 0.1;
+                        colors[i3 + 2] = themeColor.b * 0.9 + 0.1;
+                    }
+                }
+                starField.geometry.attributes.color.needsUpdate = true;
+                
+                // Update gemstone colors to match the new theme
+                gemstoneStars.children.forEach(star => {
+                    if (star instanceof THREE.Group) {
+                        // Update gem clusters
+                        star.children.forEach(gem => {
+                            if (Math.random() > 0.5) {
+                                const hsl = {};
+                                gem.material.color.getHSL(hsl);
+                                
+                                // Keep hue and saturation but match theme's lightness
+                                const themeColor = new THREE.Color(Math.random() > 0.5 ? currentTheme.primary : currentTheme.secondary);
+                                const themeHsl = {};
+                                themeColor.getHSL(themeHsl);
+                                
+                                // Blend the gem's color with the theme color
+                                gem.material.color.setHSL(
+                                    (hsl.h * 0.7 + themeHsl.h * 0.3) % 1.0,
+                                    hsl.s * 0.8 + themeHsl.s * 0.2,
+                                    themeHsl.l * 0.6 + hsl.l * 0.4
+                                );
+                                
+                                if (gem.material.emissive) {
+                                    gem.material.emissive.copy(gem.material.color).multiplyScalar(0.5);
+                                    gem.userData.originalEmissive = gem.material.emissive.clone();
+                                }
+                            }
+                        });
+                    } 
+                    else if (star instanceof THREE.Mesh) {
+                        if (Math.random() > 0.7) {
+                            // Randomly update some of the gemstones to create variety
+                            const hsl = {};
+                            star.material.color.getHSL(hsl);
+                            
+                            // Use primary or secondary theme color as influence
+                            const themeColor = new THREE.Color(Math.random() > 0.5 ? currentTheme.primary : currentTheme.secondary);
+                            const themeHsl = {};
+                            themeColor.getHSL(themeHsl);
+                            
+                            // Create a blend between the original gemstone color and the theme color
+                            star.material.color.setHSL(
+                                (hsl.h * 0.5 + themeHsl.h * 0.5) % 1.0,
+                                Math.min(hsl.s, themeHsl.s) + Math.abs(hsl.s - themeHsl.s) * 0.5,
+                                themeHsl.l * 0.7 + 0.3
+                            );
+                            
+                            if (star.material.emissive) {
+                                star.material.emissive.copy(star.material.color).multiplyScalar(0.6);
+                                star.userData.originalEmissive = star.material.emissive.clone();
+                            }
+                        }
+                    }
+                });
+                
+                // Update scene fog
+                scene.fog.color.setStyle(currentTheme.background);
+                
+                // Update ambient light
+                ambientLight.color.setStyle(currentTheme.ambient);
+        });
+
+        // Window resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Initialize
+        updateTimer();
+        updateDurationDisplay();
+        updateQuote();
+        animate();
+
+        // Update quote every 30 seconds
+        setInterval(updateQuote, 30000);
+        } catch (error) {
+            console.error("Error initializing WebGL: ", error);
+            // Fallback to basic UI if WebGL fails
+            document.getElementById('canvas-container').innerHTML = 
+                '<div style="text-align: center; margin-top: 20px; color: white;">WebGL visualization not available.</div>';
+        }
+    </script>
+</body>
+</html> 
