@@ -74,10 +74,6 @@ A beautiful and immersive Pomodoro timer featuring stunning WebGL-based 3D graph
 - Adaptive quality based on device capabilities
 - Fallback to basic UI if WebGL is not available
 
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
 ## Acknowledgments
 
 - Three.js community for the amazing 3D graphics library
