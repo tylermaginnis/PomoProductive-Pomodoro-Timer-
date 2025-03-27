@@ -2,7 +2,7 @@
 
 A beautiful and immersive Pomodoro timer featuring stunning WebGL-based 3D graphics with dynamic gemstones, stars, and visual effects. Built with Three.js, this application combines productivity with aesthetic appeal.
 
-![PomoProductive Screenshot](screenshot.png) *(Add your screenshot here)*
+![PomoProductive Screenshot](Capture.PNG) *(Add your screenshot here)*
 
 ## Features
 
